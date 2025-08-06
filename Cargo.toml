@@ -1,0 +1,23 @@
+[package]
+name = "rust-common"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThuyKaka <thuykaka.uit@gmail.com>"]
+description = "A common utility library for Rust projects"
+license = "MIT"
+repository = "https://github.com/thuykaka/rust-common"
+keywords = ["common", "utilities", "math", "helpers"]
+categories = ["utilities"]
+readme = "README.md"
+
+[dependencies]
+
+[dev-dependencies]
+
+[features]
+default = ["basic"]
+basic = []
+full = ["basic", "advanced", "statistics", "trigonometry"]
+advanced = []
+statistics = []
+trigonometry = []
