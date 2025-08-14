@@ -2,209 +2,117 @@
 
 ## Overview of Features
 
-The `rust-common` library uses Cargo features to allow users to customize which functionality gets compiled into the binary. This helps optimize binary size and compile time.
+The `rust-common` library focuses on providing essential utilities for Rust projects, starting with structured logging capabilities.
 
-## Feature Structure
+## Current Features
 
-### 1. Basic Features (Default)
-
-**Feature:** `basic` (default)
-
-**Modules included:**
-
-- `arithmetic` - Basic arithmetic operations
-- `constants` - Mathematical constants
-- `number_utils` - Number utilities
-
-**Available functions:**
-
-```rust
-// Arithmetic
-add(a, b)
-subtract(a, b)
-multiply(a, b)
-divide(a, b)
-
-// Constants
-PI, E, TAU
-
-// Number utilities
-is_even(n)
-is_odd(n)
-abs(n)
-factorial(n)
-```
-
-### 2. Advanced Features
-
-**Feature:** `advanced`
+### Logger Module
 
 **Module included:**
 
-- `advanced` - Advanced mathematical functions
+- `logger` - Structured logging with tracing
 
-**Available functions:**
-
-```rust
-pow(base, exponent)
-gcd(a, b)
-lcm(a, b)
-```
-
-### 3. Statistics Features
-
-**Feature:** `statistics`
-
-**Module included:**
-
-- `statistics` - Statistical functions
-
-**Available functions:**
+**Available functionality:**
 
 ```rust
-mean(values)
-median(values)
-mode(values)
-variance(values)
-standard_deviation(values)
+// Configuration
+LoggerConfig::default()
+LoggerConfig::new()
+    .with_log_dir("logs")
+    .with_log_filename("app.log")
+    .with_console_enabled(true)
+
+// Initialization
+init_with_default()
+init_with_config(config)
 ```
-
-### 4. Trigonometry Features
-
-**Feature:** `trigonometry`
-
-**Module included:**
-
-- `trigonometry` - Trigonometric functions
-
-**Available functions:**
-
-```rust
-sin(angle)
-cos(angle)
-tan(angle)
-asin(value)
-acos(value)
-atan(value)
-```
-
-### 5. Full Features
-
-**Feature:** `full`
-
-**Includes all features:**
-
-- `basic`
-- `advanced`
-- `statistics`
-- `trigonometry`
 
 ## Usage
 
-### Installation with default features
+### Installation
 
 ```toml
 [dependencies]
 rust-common = "0.1.0"
 ```
 
-### Installation with all features
-
-```toml
-[dependencies]
-rust-common = { version = "0.1.0", features = ["full"] }
-```
-
-### Installation with specific features
-
-```toml
-[dependencies]
-rust-common = { version = "0.1.0", features = ["advanced", "statistics"] }
-```
-
 ### Installation via command line
 
 ```bash
-# Default (basic)
+# Install the library
 cargo add rust-common
-
-# All features
-cargo add rust-common --features full
-
-# Specific features
-cargo add rust-common --features "advanced trigonometry"
 ```
 
-## Conditional Compilation
+## Logger Features
 
-In code, features are checked using `#[cfg(feature = "feature_name")]`:
+### Configuration Options
+
+The logger supports various configuration options:
 
 ```rust
-// Module only compiled when "advanced" feature is enabled
-#[cfg(feature = "advanced")]
-pub mod advanced;
+use rust_common::logger::LoggerConfig;
 
-// Function only exported when "statistics" feature is enabled
-#[cfg(feature = "statistics")]
-pub use statistics::*;
+let config = LoggerConfig::new()
+    .with_log_dir("custom_logs")        // Set custom log directory
+    .with_log_filename("my_app.log")    // Set custom log filename
+    .with_console_enabled(true);        // Enable console output
 ```
 
-## Feature Checking
-
-### Check if a feature is enabled
+### Initialization
 
 ```rust
-#[cfg(feature = "advanced")]
-fn advanced_function() {
-    // Code only runs when "advanced" feature is enabled
-}
+use rust_common::logger;
 
-#[cfg(not(feature = "basic"))]
-fn alternative_function() {
-    // Code only runs when "basic" feature is NOT enabled
-}
+// Initialize with default settings
+logger::init_with_default()?;
+
+// Or initialize with custom configuration
+let config = LoggerConfig::new()
+    .with_log_dir("logs")
+    .with_console_enabled(true);
+logger::init_with_config(config)?;
 ```
 
-### Check multiple features
+### Usage with Tracing
 
 ```rust
-#[cfg(all(feature = "advanced", feature = "statistics"))]
-fn combined_function() {
-    // Code only runs when both "advanced" and "statistics" are enabled
-}
+use tracing::{info, warn, error, debug, trace};
 
-#[cfg(any(feature = "advanced", feature = "trigonometry"))]
-fn either_function() {
-    // Code runs when at least one of the two features is enabled
-}
+// After initialization, use tracing macros
+info!("Application started");
+warn!("This is a warning message");
+error!("An error occurred: {}", error_msg);
+debug!("Debug information");
+trace!("Detailed trace information");
 ```
 
-## Benefits of Features
+## Benefits of the Current Structure
 
-1. **Optimize binary size**: Only compile what's necessary
-2. **Reduce compile time**: Less code = faster compilation
-3. **Flexibility**: Users can choose features that fit their needs
-4. **Compatibility**: Can be used in restricted environments
+1. **Focused functionality**: Concentrates on essential logging capabilities
+2. **Easy to use**: Simple initialization and configuration
+3. **Flexible**: Supports both file and console logging
+4. **Structured**: Uses tracing for structured logging
+5. **Error handling**: Proper error types with thiserror integration
 
-## Real-world Examples
+## Future Roadmap
 
-### Small project (only basic calculations needed)
+The library is designed to be extensible. Future modules may include:
 
-```toml
-[dependencies]
-rust-common = "0.1.0"  # Only basic features
-```
+- **Configuration management**: Environment and file-based configuration
+- **String utilities**: Common string manipulation functions
+- **Date/time utilities**: Date and time handling helpers
+- **File I/O utilities**: File system operation helpers
+- **Data structures**: Common data structure implementations
+- **Networking utilities**: HTTP client/server helpers
 
-### Scientific project (needs statistics and trigonometry)
+## Adding New Features
 
-```toml
-[dependencies]
-rust-common = { version = "0.1.0", features = ["statistics", "trigonometry"] }
-```
+To add a new feature module:
 
-### Full mathematical project
+1. Create the module directory under `src/`
+2. Implement the module functionality
+3. Add the module to `src/lib.rs`
+4. Update documentation
+5. Add examples and tests
 
-```toml
-[dependencies]
-rust-common = { version = "0.1.0", features = ["full"] }
-```
+The current architecture supports easy extension while maintaining backward compatibility.

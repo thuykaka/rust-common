@@ -1,18 +1,15 @@
 # Module Structure Documentation
 
-## Math Module Organization
+## Logger Module Organization
 
-The `math` module is organized into specialized sub-modules for easy management and extensibility:
+The `logger` module is organized for easy management and extensibility:
 
 ```
-src/math/
+src/logger/
 ├── mod.rs           # Entry point, re-exports all sub-modules
-├── arithmetic.rs    # Basic arithmetic operations
-├── constants.rs     # Mathematical constants
-├── number_utils.rs  # Number utilities
-├── advanced.rs      # Advanced mathematical functions
-├── trigonometry.rs  # Trigonometric functions
-└── statistics.rs    # Statistical functions
+├── config.rs        # Logger configuration
+├── init.rs          # Logger initialization
+└── error.rs         # Logger error types
 ```
 
 ## Usage Methods
@@ -20,102 +17,64 @@ src/math/
 ### 1. Direct usage from main module
 
 ```rust
-use rust_common::math;
+use rust_common::logger;
 
-let sum = math::add(5, 3);
-let pi = math::PI;
-let is_even = math::is_even(42);
+logger::init_with_default()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ### 2. Using specific sub-modules
 
 ```rust
-use rust_common::math::arithmetic;
-use rust_common::math::constants;
-use rust_common::math::number_utils;
+use rust_common::logger::config::LoggerConfig;
+use rust_common::logger::init;
 
-let sum = arithmetic::add(5, 3);
-let pi = constants::PI;
-let is_prime = number_utils::is_prime(17);
+let config = LoggerConfig::default();
+init::init_with_config(config)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-### 3. Import all from a sub-module
+### 3. Import all from the logger module
 
 ```rust
-use rust_common::math::arithmetic::*;
+use rust_common::logger::*;
 
-let result = add(2, 3) + multiply(4, 5);
+init_with_default()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Sub-modules
 
-### `arithmetic.rs`
+### `config.rs`
 
-- `add(a, b)` - Add two numbers
-- `subtract(a, b)` - Subtract two numbers
-- `multiply(a, b)` - Multiply two numbers
-- `divide(a, b)` - Divide two numbers
-- `modulo(a, b)` - Get remainder
+- `LoggerConfig` - Configuration struct for logger
+- `with_log_dir()` - Set log directory
+- `with_log_filename()` - Set log filename
+- `with_console_enabled()` - Enable/disable console logging
 
-### `constants.rs`
+### `init.rs`
 
-- `PI` - Pi constant π
-- `E` - Euler's number e
-- `TAU` - Tau constant τ (2π)
-- `PHI` - Golden ratio φ
-- `SQRT_2`, `SQRT_3` - Square root of 2, 3
-- `LN_2`, `LN_10` - Natural logarithm of 2, 10
-- `LOG2_E`, `LOG10_E` - Base-2, Base-10 logarithm of e
+- `init_with_default()` - Initialize with default configuration
+- `init_with_config(config)` - Initialize with custom configuration
 
-### `number_utils.rs`
+### `error.rs`
 
-- `is_even(n)`, `is_odd(n)` - Check even/odd
-- `abs(n)` - Absolute value
-- `factorial(n)` - Factorial
-- `pow(base, exponent)` - Power
-- `is_prime(n)` - Check if prime
-- `next_prime(n)` - Next prime number
-- `digit_count(n)` - Count digits
-
-### `advanced.rs`
-
-- `gcd(a, b)` - Greatest common divisor
-- `lcm(a, b)` - Least common multiple
-- `sqrt(n)`, `cbrt(n)` - Square root, cube root
-- `ln(n)`, `log10(n)`, `log2(n)` - Logarithms
-- `exp(n)` - Exponential function
-- `sinh(n)`, `cosh(n)`, `tanh(n)` - Hyperbolic functions
-
-### `trigonometry.rs`
-
-- `sin(n)`, `cos(n)`, `tan(n)` - Basic trigonometric functions
-- `asin(n)`, `acos(n)`, `atan(n)` - Inverse trigonometric functions
-- `deg_to_rad(deg)`, `rad_to_deg(rad)` - Angle unit conversions
-- `csc(n)`, `sec(n)`, `cot(n)` - Reciprocal trigonometric functions
-
-### `statistics.rs`
-
-- `mean(data)` - Mean/average
-- `median(data)` - Median
-- `variance(data)` - Variance
-- `std_dev(data)` - Standard deviation
-- `min(data)`, `max(data)` - Min/max values
-- `range(data)` - Range
-- `sum(data)`, `product(data)` - Sum, product
+- `LoggerError` - Error types for logger operations
+- Error handling for initialization failures
 
 ## Benefits of this structure
 
-1. **Clear organization**: Each file contains related functions
-2. **Easy maintenance**: Modifying one group doesn't affect others
-3. **Easy extensibility**: Adding new modules is straightforward
+1. **Clear organization**: Each file contains related functionality
+2. **Easy maintenance**: Modifying one component doesn't affect others
+3. **Easy extensibility**: Adding new logger features is straightforward
 4. **Flexibility**: Can import individual modules or all at once
-5. **Backward compatibility**: Maintains old functions in mod.rs
+5. **Error handling**: Dedicated error types for better debugging
 
 ## Adding a new module
 
-To add a new module (e.g., `geometry.rs`):
+To add a new module (e.g., `formatter.rs`):
 
-1. Create file `src/math/geometry.rs`
-2. Add `pub mod geometry;` to `src/math/mod.rs`
-3. Add `pub use geometry::*;` to `src/math/mod.rs`
-4. Write geometry functions in the new file
+1. Create file `src/logger/formatter.rs`
+2. Add `pub mod formatter;` to `src/logger/mod.rs`
+3. Add `pub use formatter::*;` to `src/logger/mod.rs`
+4. Write formatter functions in the new file
