@@ -1,33 +1,37 @@
 //! # Rust Common Library
 //!
 //! A comprehensive utility library for Rust projects providing common functionality
-//! across different domains including mathematics, data structures, and more.
+//! across different domains including logging and more.
 //!
 //! ## Features
 //!
-//! - **Math**: Mathematical utilities and operations
+//! - **Logger**: Structured logging with tracing
 //! - **Extensible**: Easy to add new modules
 //! - **Well-tested**: Comprehensive test coverage
 //!
 //! ## Usage
 //!
 //! ```rust
-//! use rust_common::math;
+//! use rust_common::logger;
+//! use tracing::info;
 //!
-//! let result = math::add(5, 3);
-//! assert_eq!(result, 8);
+//! // Initialize logger
+//! logger::init_with_default()?;
+//!
+//! info!("Logger initialized successfully");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! ## Modules
 //!
-//! - `math`: Mathematical utilities and operations
+//! - `logger`: Structured logging with tracing
 
-// Math module is always available (basic feature)
-pub mod math;
+// Logger module is always available
+pub mod logger;
 
 /// Re-export commonly used items for convenience
 pub mod prelude {
-    pub use crate::math::*;
+    pub use crate::logger::*;
 }
 
 #[cfg(test)]
@@ -35,8 +39,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_math_module() {
-        assert_eq!(math::add(2, 3), 5);
-        assert_eq!(math::subtract(5, 3), 2);
+    fn test_logger_module() {
+        // Test that logger module is accessible
+        let config = logger::LoggerConfig::default();
+        assert_eq!(config.log_dir(), "logs");
+        assert_eq!(config.log_filename(), "application.log");
+    }
+
+    #[test]
+    fn test_prelude_imports() {
+        use crate::prelude::*;
+
+        // Test logger types from prelude
+        let config = LoggerConfig::default();
+        assert!(config.enable_console());
     }
 }

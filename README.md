@@ -1,10 +1,10 @@
 # Rust Common Library
 
-A comprehensive utility library for Rust projects providing common functionality across different domains including mathematics, data structures, and more.
+A comprehensive utility library for Rust projects providing common functionality across different domains including logging and more.
 
 ## Features
 
-- **Math**: Mathematical utilities and operations
+- **Logger**: Structured logging with tracing
 - **Extensible**: Easy to add new modules
 - **Well-tested**: Comprehensive test coverage
 - **Documented**: Full documentation with examples
@@ -18,52 +18,11 @@ Add this to your `Cargo.toml`:
 rust-common = "0.1.0"
 ```
 
-## Features
-
-The library supports conditional compilation through Cargo features to optimize for your specific needs:
-
-### Available Features
-
-- **`basic`** (default): Core mathematical utilities including arithmetic operations, constants, and number utilities
-- **`advanced`**: Advanced mathematical functions like GCD, LCM, and power calculations
-- **`statistics`**: Statistical functions and data analysis utilities
-- **`trigonometry`**: Trigonometric functions and angle calculations
-- **`full`**: All features including basic, advanced, statistics, and trigonometry
-
-### Feature Usage
-
-#### Default Installation (Basic Features Only)
-
-```toml
-[dependencies]
-rust-common = "0.1.0"
-```
-
-#### Full Feature Set
-
-```toml
-[dependencies]
-rust-common = { version = "0.1.0", features = ["full"] }
-```
-
-#### Selective Features
-
-```toml
-[dependencies]
-rust-common = { version = "0.1.0", features = ["advanced", "statistics"] }
-```
-
-#### Command Line Installation
+## Installation
 
 ```bash
-# Install with default features
+# Install with cargo
 cargo add rust-common
-
-# Install with all features
-cargo add rust-common --features full
-
-# Install with specific features
-cargo add rust-common --features "advanced trigonometry"
 ```
 
 ## Usage
@@ -71,22 +30,14 @@ cargo add rust-common --features "advanced trigonometry"
 ### Basic Usage
 
 ```rust
-use rust_common::math;
+use rust_common::logger;
+use tracing::info;
 
-// Basic arithmetic
-let sum = math::add(5, 3);
-let difference = math::subtract(10, 4);
-let product = math::multiply(6, 7);
-let quotient = math::divide(20, 4);
+// Initialize logger
+logger::init_with_default()?;
 
-// Mathematical constants
-let pi = math::PI;
-let e = math::E;
-
-// Number utilities
-let is_even = math::is_even(42);
-let is_odd = math::is_odd(17);
-let factorial = math::factorial(5);
+info!("Logger initialized successfully");
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ### Using the Prelude
@@ -96,71 +47,61 @@ For convenience, you can use the prelude module:
 ```rust
 use rust_common::prelude::*;
 
-let result = add(2, 3);
-assert_eq!(result, 5);
+// Initialize logger with default configuration
+init_with_default()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Modules
 
-### Math Module
+### Logger Module
 
-The math module provides various mathematical utilities:
+The logger module provides structured logging with tracing:
 
-#### Basic Arithmetic
+#### Configuration
 
-- `add(a, b)` - Add two numbers
-- `subtract(a, b)` - Subtract two numbers
-- `multiply(a, b)` - Multiply two numbers
-- `divide(a, b)` - Divide two numbers
+- `LoggerConfig` - Configuration for the logger
+- `init_with_default()` - Initialize with default configuration
+- `init_with_config(config)` - Initialize with custom configuration
 
-#### Mathematical Constants
+#### Features
 
-- `PI` - The mathematical constant π
-- `E` - The mathematical constant e
-- `TAU` - The mathematical constant τ (2π)
-
-#### Number Utilities
-
-- `is_even(n)` - Check if a number is even
-- `is_odd(n)` - Check if a number is odd
-- `abs(n)` - Calculate absolute value
-- `factorial(n)` - Calculate factorial
-
-#### Advanced Functions
-
-- `pow(base, exponent)` - Calculate power
-- `gcd(a, b)` - Calculate greatest common divisor
-- `lcm(a, b)` - Calculate least common multiple
+- File and console logging
+- Configurable log levels
+- Structured logging with tracing
+- Error handling integration
 
 ## Examples
 
-### Mathematical Operations
+### Logger Usage
 
 ```rust
-use rust_common::math;
+use rust_common::logger;
+use tracing::{info, warn, error};
 
-// Basic calculations
-let sum = math::add(10, 5);
-let product = math::multiply(6, 8);
-let power = math::pow(2, 10);
+// Initialize logger
+logger::init_with_default()?;
 
-// Number properties
-assert!(math::is_even(42));
-assert!(math::is_odd(17));
+// Use structured logging
+info!("Application started");
+warn!("This is a warning");
+error!("An error occurred");
 
-// Advanced math
-let gcd_result = math::gcd(48, 18); // 6
-let lcm_result = math::lcm(12, 18); // 36
-let factorial_result = math::factorial(5); // 120
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-### Using Constants
+### Custom Configuration
 
 ```rust
-use rust_common::math;
+use rust_common::logger::LoggerConfig;
 
-let area = math::PI * 5.0 * 5.0; // Circle area
-let natural_log = math::E.ln(); // Should be 1.0
+let config = LoggerConfig::new()
+    .with_log_dir("custom_logs")
+    .with_log_filename("app.log")
+    .with_console_enabled(true);
+
+logger::init_with_config(config)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Development
@@ -198,9 +139,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Roadmap
 
-- [ ] Add more mathematical functions (trigonometry, statistics)
 - [ ] Add data structure utilities
 - [ ] Add string manipulation utilities
 - [ ] Add date/time utilities
 - [ ] Add file I/O utilities
 - [ ] Add networking utilities
+- [ ] Add configuration management utilities

@@ -10,19 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Initial release of rust-common library
-- Math module with comprehensive mathematical utilities
-- Basic arithmetic operations (add, subtract, multiply, divide)
-- Mathematical constants (PI, E, TAU)
-- Number utilities (is_even, is_odd, abs, factorial)
-- Advanced mathematical functions (pow, gcd, lcm)
+- Logger module with structured logging capabilities
+- Tracing integration for structured logging
+- Configurable file and console logging
+- Logger configuration management
 - Comprehensive test suite
 - Full documentation with examples
 - Prelude module for convenient imports
-- Example usage in `examples/basic_usage.rs`
+- Example usage in `examples/logger_demo.rs`
 
 ### Features
 
-- Generic arithmetic functions that work with different number types
+- Structured logging with tracing
+- Configurable log output (file and console)
+- Error handling integration with thiserror
 - Well-documented API with examples
 - MIT License
 - Professional project structure
@@ -32,4 +33,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Initial project setup
-- Basic math module structure
+- Basic logger module structure
