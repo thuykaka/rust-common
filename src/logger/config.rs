@@ -120,7 +120,7 @@ impl Default for LoggerConfig {
             show_target: false,
             use_ansi: true,
             enable_console: true,
-            enable_file: true,
+            enable_file: false,
             rotation: Rotation::DAILY,
             show_spans: false,
         }

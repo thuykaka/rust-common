@@ -27,11 +27,14 @@
 //! - `logger`: Structured logging with tracing
 
 // Logger module is always available
+pub mod kafka;
 pub mod logger;
 
 /// Re-export commonly used items for convenience
 pub mod prelude {
-    pub use crate::logger::*;
+    // Re-export specific types to avoid naming conflicts
+    pub use crate::kafka::{Error as KafkaError, HandlerResult, KafkaConfig, StreamHandler};
+    pub use crate::logger::{init_with_default, LoggerConfig};
 }
 
 #[cfg(test)]
@@ -53,5 +56,14 @@ mod tests {
         // Test logger types from prelude
         let config = LoggerConfig::default();
         assert!(config.enable_console());
+
+        // Test kafka types from prelude
+        let kafka_config = KafkaConfig {
+            client_id: None,
+            cluster_id: "test".to_string(),
+            bootstrap_servers: "localhost:9092".to_string(),
+            topics: vec!["test".to_string()],
+        };
+        assert_eq!(kafka_config.cluster_id, "test");
     }
 }
