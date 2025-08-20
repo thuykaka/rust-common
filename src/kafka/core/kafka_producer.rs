@@ -163,7 +163,7 @@ impl KafkaProducer {
     /// This method logs:
     /// - Success: `info!("sent message: {:?} to topic: {} success", message, topic)`
     /// - Failure: `error!("sent message: {:?} to topic: {} failed: {}", message, topic, e)`
-    pub async fn send<T>(&self, message: T, topic: &str) -> anyhow::Result<()>
+    pub async fn send<T>(&self, message: T, topic: &str) -> anyhow::Result<(), KafkaError>
     where
         T: serde::Serialize + std::fmt::Debug,
     {

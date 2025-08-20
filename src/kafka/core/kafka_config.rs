@@ -70,20 +70,26 @@ pub struct KafkaClientConfig {
 }
 
 impl KafkaClientConfig {
-    pub fn new(cluster_id: String, bootstrap_servers: String, topics: Option<Vec<String>>) -> Self {
+    pub fn new(cluster_id: String, bootstrap_servers: String) -> Self {
         let mut conf_map = HashMap::new();
         let client_id = format!("{}-{}", cluster_id.clone(), Uuid::new_v4());
 
         conf_map.insert("client.id".to_string(), client_id);
         conf_map.insert("bootstrap.servers".to_string(), bootstrap_servers);
         conf_map.insert("allow.auto.create.topics".to_string(), "true".to_string());
+        conf_map.insert("metadata.max.age.ms".to_string(), "1000".to_string());
 
         Self {
             cluster_id,
-            topics,
+            topics: None,
             conf_map,
             log_level: RDKafkaLogLevel::Info,
         }
+    }
+
+    pub fn with_topics(mut self, topics: Vec<String>) -> Self {
+        self.topics = Some(topics);
+        self
     }
 
     pub fn set<K, V>(mut self, key: K, value: V) -> Self

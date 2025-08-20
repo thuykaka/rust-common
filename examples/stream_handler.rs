@@ -10,7 +10,7 @@ async fn main() -> anyhow::Result<()> {
     let bootstrap_servers = "localhost:9092".to_string();
     let topics = vec![cluster_id.clone()];
 
-    let config = KafkaClientConfig::new(cluster_id, bootstrap_servers, Some(topics));
+    let config = KafkaClientConfig::new(cluster_id, bootstrap_servers).with_topics(topics);
 
     tracing::info!("init stream handler with config: {:?}", config);
 

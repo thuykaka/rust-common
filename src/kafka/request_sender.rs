@@ -1,248 +1,274 @@
-// use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-// use crate::kafka::{
-//     utils::{create_message, extract_payload},
-//     CustomContext, KafkaConfig, KafkaError, MessageType, ParsedMessage,
-// };
-// use anyhow::{Context, Result};
-// use futures::StreamExt;
-// use rdkafka::{
-//     config::RDKafkaLogLevel,
-//     consumer::Consumer,
-//     message::OwnedMessage,
-//     producer::{FutureProducer, FutureRecord},
-//     ClientConfig, Message,
-// };
-// use tokio::sync::{oneshot, RwLock};
-// use tracing::{info, warn};
+use anyhow::{anyhow, Context, Result};
+use rdkafka::message::{Message, OwnedMessage};
+use tokio::{select, sync::oneshot::Sender};
+use tokio::{
+    sync::{oneshot, RwLock},
+    time::sleep,
+};
+use tracing::{error, info, warn};
 
-// use crate::kafka::{extensions::MessageLatency, LoggingConsumer};
+use crate::kafka::{
+    utils::utils::{create_message, extract_payload},
+    KafkaClientConfig, KafkaConsumer, KafkaError, KafkaProducer, MessageLatency, MessageType,
+    ParsedMessage, ResponseDestination,
+};
 
-// struct PendingRequest {
-//     sender: oneshot::Sender<ParsedMessage>,
-//     created_at: std::time::Instant,
-//     timeout_task: tokio::task::JoinHandle<()>,
-// }
+#[derive(Debug, Clone)]
+pub struct RequestAsyncParams {
+    pub topic: String,
+    pub uri: String,
+    pub transaction_id: Option<String>,
+    pub message_id: String,
+    pub data: serde_json::Value,
+    pub timeout_secs: Option<i64>,
+}
 
-// pub struct RequestSender {
-//     config: KafkaConfig,
-//     consumer: LoggingConsumer,
-//     producer: Arc<FutureProducer>,
-//     concurrency_limit: usize,
-//     pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
-//     response_topic: String,
-//     expire_time: i64,
-//     ping_interval_secs: u64,
-// }
+impl RequestAsyncParams {
+    pub fn new(
+        topic: String,
+        uri: String,
+        message_id: Option<String>,
+        data: serde_json::Value,
+    ) -> Self {
+        Self {
+            topic,
+            uri,
+            transaction_id: None,
+            message_id: message_id.unwrap_or("".to_string()),
+            data,
+            timeout_secs: None,
+        }
+    }
 
-// impl RequestSender {
-//     pub fn new(config: KafkaConfig) -> anyhow::Result<Self> {
-//         Self::with_concurrency_limit(config, 100, 60000)
-//     }
+    pub fn with_transaction_id(mut self, transaction_id: String) -> Self {
+        self.transaction_id = Some(transaction_id);
+        self
+    }
 
-//     pub fn with_concurrency_limit(
-//         config: KafkaConfig,
-//         concurrency_limit: usize,
-//         expire_time: i64,
-//     ) -> Result<Self> {
-//         let response_topic = format!("{}.response.{}", &config.cluster_id, uuid::Uuid::new_v4());
+    pub fn with_message_id(mut self, message_id: String) -> Self {
+        self.message_id = message_id;
+        self
+    }
 
-//         let context = CustomContext;
+    pub fn with_timeout_secs(mut self, timeout_secs: i64) -> Self {
+        self.timeout_secs = Some(timeout_secs);
+        self
+    }
+}
 
-//         let mut consumer_config = ClientConfig::new();
+struct PendingRequest {
+    sender: Sender<ParsedMessage>,
+    created_at: Instant,
+}
 
-//         consumer_config
-//             .set(
-//                 "group.id",
-//                 format!("{}-{}", &config.cluster_id, uuid::Uuid::new_v4()),
-//             )
-//             .set("bootstrap.servers", &config.bootstrap_servers)
-//             .set("allow.auto.create.topics", "true")
-//             .set("enable.partition.eof", "false")
-//             .set("enable.auto.commit", "true")
-//             .set("auto.offset.reset", "earliest")
-//             .set("session.timeout.ms", "10000")
-//             .set("heartbeat.interval.ms", "500")
-//             .set_log_level(RDKafkaLogLevel::Debug);
+impl PendingRequest {
+    pub fn new(sender: Sender<ParsedMessage>) -> Self {
+        Self {
+            sender,
+            created_at: Instant::now(),
+        }
+    }
 
-//         let consumer: LoggingConsumer = consumer_config
-//             .create_with_context(context)
-//             .context("Consumer creation failed")?;
+    pub fn resolve(self, value: ParsedMessage) -> Result<()> {
+        let _ = self.sender.send(value);
+        Ok(())
+    }
+}
 
-//         let topics: Vec<&str> = vec![&response_topic];
+pub struct RequestSender {
+    config: KafkaClientConfig,
+    consumer: KafkaConsumer,
+    producer: Arc<KafkaProducer>,
+    pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
+    timeout_secs: i64,
+    response_topic: String,
+}
 
-//         consumer
-//             .subscribe(&topics)
-//             .context("Can't subscribe to specified topics")?;
+impl RequestSender {
+    const DEFAULT_CONCURRENCY_LIMIT: usize = 100;
+    const DEFAULT_TIMEOUT_SECS: i64 = 60;
 
-//         info!("subscribed to response topic: {}", response_topic);
+    pub fn new(config: KafkaClientConfig) -> Result<Self> {
+        Self::with_concurrency_limit(
+            config,
+            Self::DEFAULT_CONCURRENCY_LIMIT,
+            Self::DEFAULT_TIMEOUT_SECS,
+        )
+    }
 
-//         let mut producer_config = ClientConfig::new();
+    pub fn with_concurrency_limit(
+        config: KafkaClientConfig,
+        concurrency_limit: usize,
+        timeout_secs: i64,
+    ) -> Result<Self> {
+        let response_topic = format!(
+            "{}.{}",
+            config.cluster_id, "9a2ece8f-0294-49cf-b2c9-9008417caea5"
+        );
+        let mut consumer_config = config.clone();
+        consumer_config.topics = Some(vec![response_topic.clone()]);
 
-//         producer_config
-//             .set("bootstrap.servers", &config.bootstrap_servers)
-//             .set("message.timeout.ms", "5000")
-//             .set("allow.auto.create.topics", "true")
-//             .set("acks", "0")
-//             .set_log_level(RDKafkaLogLevel::Debug);
+        let consumer = KafkaConsumer::new(consumer_config, concurrency_limit)
+            .context("failed to create Kafka consumer")?;
 
-//         let producer: FutureProducer = producer_config
-//             .create()
-//             .context("Producer creation failed")?;
+        let producer =
+            KafkaProducer::new(config.clone()).context("failed to create Kafka producer")?;
 
-//         Ok(Self {
-//             config,
-//             consumer,
-//             producer: Arc::new(producer),
-//             concurrency_limit,
-//             pending_requests: Arc::new(RwLock::new(HashMap::new())),
-//             response_topic,
-//             expire_time,
-//             ping_interval_secs: 30, // Default 30 seconds
-//         })
-//     }
+        Ok(Self {
+            config,
+            consumer,
+            producer: Arc::new(producer),
+            pending_requests: Arc::new(RwLock::new(HashMap::new())),
+            timeout_secs,
+            response_topic,
+        })
+    }
 
-//     pub fn get_config(&self) -> &KafkaConfig {
-//         &self.config
-//     }
+    pub fn get_config(&self) -> &KafkaClientConfig {
+        &self.config
+    }
 
-//     pub fn get_concurrency_limit(&self) -> usize {
-//         self.concurrency_limit
-//     }
+    pub async fn start(&self) -> Result<()> {
+        let timeout_secs = self.timeout_secs;
+        let pending_requests = Arc::clone(&self.pending_requests);
 
-//     pub fn set_concurrency_limit(&mut self, limit: usize) {
-//         self.concurrency_limit = limit;
-//     }
+        self.consumer
+            .start(move |message| {
+                let pending_requests = Arc::clone(&pending_requests);
 
-//     pub async fn start_processing(&self) -> anyhow::Result<()> {
-//         info!("starting message processing...");
+                async move { Self::handle_message(message, pending_requests, timeout_secs).await }
+            })
+            .await
+    }
 
-//         self.consumer
-//             .stream()
-//             .filter_map(|msg| async { msg.ok() })
-//             .map(|m| {
-//                 let pending_requests = Arc::clone(&self.pending_requests);
-//                 let expire_time = self.expire_time;
-//                 async move {
-//                     Self::process_message(m.detach(), pending_requests, expire_time).await
-//                 }
-//             })
-//             .buffer_unordered(self.concurrency_limit)
-//             .for_each(|res| async {
-//                 if let Err(e) = res {
-//                     warn!("Error processing message: {}", e);
-//                 }
-//             })
-//             .await;
+    async fn handle_message(
+        message: OwnedMessage,
+        pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
+        timeout_secs: i64,
+    ) -> Result<()> {
+        let payload = extract_payload(&message).ok_or_else(|| anyhow!("message has no payload"))?;
 
-//         Ok(())
-//     }
+        let latency = message.get_latency();
 
-//     pub async fn ping(&self) -> Result<()> {
-//         Self::send_ping(&self.producer, &self.response_topic).await
-//     }
+        info!(
+            "received message: '{}' from topic {}, latency: {}ms",
+            payload,
+            message.topic(),
+            latency,
+        );
 
-//     async fn send_ping(producer: &Arc<FutureProducer>, response_topic: &str) -> Result<()> {
-//         info!("ping");
+        if message.is_expired(timeout_secs) {
+            warn!(
+                "ignore this request because it is expired {} _ {}",
+                timeout_secs, payload
+            );
+            return Ok(());
+        }
 
-//         let send_message = create_message(
-//             None,
-//             "".to_string(),
-//             uuid::Uuid::new_v4().to_string(),
-//             response_topic.to_string(),
-//             "ping".to_string(),
-//             serde_json::Value::Null,
-//             None,
-//             None,
-//         );
+        let parsed_message = ParsedMessage::parse_from_string(&payload)
+            .context("failed to parse message from kafka payload")?;
 
-//         let payload = serde_json::to_string(&send_message.message).map_err(|e| {
-//             KafkaError::InternalServerError(format!("Failed to serialize response message: {}", e))
-//         })?;
+        let mut guard = pending_requests.write().await;
 
-//         let record = FutureRecord::<String, String>::to(&send_message.topic).payload(&payload);
+        if let Some(request) = guard.remove(&parsed_message.transaction_id) {
+            let duration = Instant::now()
+                .duration_since(request.created_at)
+                .as_millis();
 
-//         let _ = producer
-//             .as_ref()
-//             .send(record, std::time::Duration::from_secs(0))
-//             .await
-//             .map_err(|(e, _)| {
-//                 tracing::error!(
-//                     "send request {}, message: {} to topic {} failed: {}",
-//                     send_message.message.transaction_id,
-//                     payload,
-//                     send_message.topic,
-//                     e
-//                 );
-//                 KafkaError::InternalServerError(format!("Failed to send ping message: {}", e))
-//             })?;
+            info!(
+                "request {} took {}ms",
+                parsed_message.transaction_id, duration
+            );
 
-//         info!(
-//             "send request {}, message: {} to topic {} success",
-//             send_message.message.transaction_id, payload, send_message.topic
-//         );
+            let _ = request.resolve(parsed_message);
+        } else {
+            warn!(
+                "ignore this request because it is not found {} (maybe timeout)",
+                parsed_message.transaction_id
+            );
+            return Ok(());
+        }
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     async fn process_message(
-//         message: OwnedMessage,
-//         pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
-//         expire_time: i64,
-//     ) -> anyhow::Result<()> {
-//         let message_value =
-//             extract_payload(&message).ok_or_else(|| anyhow::anyhow!("message has no payload"))?;
+    async fn send_request_base(
+        &self,
+        topic: String,
+        uri: String,
+        transaction_id: String,
+        message_id: String,
+        data: serde_json::Value,
+    ) -> Result<(), KafkaError> {
+        let send_message = create_message(
+            Some(self.config.cluster_id.clone()),
+            message_id,
+            transaction_id,
+            topic,
+            uri,
+            data,
+            Some(MessageType::Request),
+            Some(ResponseDestination {
+                topic: self.response_topic.clone(),
+                uri: "REQUEST_RESPONSE".to_string(),
+            }),
+        );
 
-//         let latency = message.get_latency();
-//         info!(
-//             "received message: '{}' from topic {}, latency: {}ms",
-//             message_value,
-//             message.topic(),
-//             latency,
-//         );
+        self.producer
+            .send(send_message.message, &send_message.topic)
+            .await?;
 
-//         if latency > 0 && latency > expire_time {
-//             warn!(
-//                 "ignore this request because it is expired {} _ {}",
-//                 expire_time, message_value
-//             );
-//             return Ok(());
-//         }
+        Ok(())
+    }
 
-//         let parsed_message = ParsedMessage::parse_from_string(&message_value)
-//             .context("failed to parse message from Kafka payload")?;
+    pub async fn send_request_async(
+        &self,
+        params: RequestAsyncParams,
+    ) -> Result<ParsedMessage, KafkaError> {
+        let transaction_id = params
+            .transaction_id
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-//         if parsed_message.uri == "ping" {
-//             return Self::handle_ping();
-//         }
+        let (tx, rx) = oneshot::channel::<ParsedMessage>();
 
-//         let mut guard = pending_requests.write().await;
+        {
+            let mut guard = self.pending_requests.write().await;
+            let pending_request = PendingRequest::new(tx);
+            guard.insert(transaction_id.clone(), pending_request);
+        }
 
-//         if let Some(request) = guard.remove(&parsed_message.transaction_id) {
-//             let duration = Instant::now()
-//                 .duration_since(request.created_at)
-//                 .as_millis();
+        self.send_request_base(
+            params.topic,
+            params.uri,
+            transaction_id.clone(),
+            params.message_id,
+            params.data,
+        )
+        .await?;
 
-//             info!(
-//                 "request {} took {}ms",
-//                 parsed_message.transaction_id, duration
-//             );
+        select! {
+            res = rx => {
+                self.pending_requests.write().await.remove(&transaction_id);
+                match res {
+                    Ok(response) => Ok(response),
+                    Err(e) => Err(KafkaError::InternalServerError(format!("channel closed unexpectedly: {}", e))),
+                }
+            }
+            _ = sleep(Duration::from_secs(params.timeout_secs.unwrap_or(Self::DEFAULT_TIMEOUT_SECS) as u64)) => {
+                error!("request {} timeout", transaction_id);
+                self.pending_requests.write().await.remove(&transaction_id);
+                Err(KafkaError::TimeoutError(format!("request {} timeout", transaction_id)))
+            }
+        }
+    }
 
-//             let _ = request.sender.send(parsed_message);
-//             request.timeout_task.abort();
-//         } else {
-//             warn!(
-//                 "ignore this request because it is not found {} (maybe timeout)",
-//                 parsed_message.transaction_id
-//             );
-//             return Ok(());
-//         }
-
-//         Ok(())
-//     }
-
-//     fn handle_ping() -> Result<()> {
-//         info!("pong");
-//         Ok(())
-//     }
-// }
+    pub async fn send_request_acknowledge(&self, _: RequestAsyncParams) -> Result<(), KafkaError> {
+        todo!("send request acknowledge")
+    }
+}

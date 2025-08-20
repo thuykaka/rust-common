@@ -169,6 +169,11 @@ pub trait MessageLatency {
             format!("{}ms", latency)
         }
     }
+
+    fn is_expired(&self, expire_time: i64) -> bool {
+        let latency = self.get_latency();
+        latency > 0 && latency > expire_time
+    }
 }
 
 impl MessageLatency for OwnedMessage {
