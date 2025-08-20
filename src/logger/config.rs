@@ -116,7 +116,7 @@ impl Default for LoggerConfig {
             log_dir: "logs".to_string(),
             log_filename: "application.log".to_string(),
             show_file_line: cfg!(debug_assertions),
-            show_thread: false,
+            show_thread: true,
             show_target: false,
             use_ansi: true,
             enable_console: true,

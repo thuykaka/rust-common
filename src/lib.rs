@@ -33,7 +33,7 @@ pub mod logger;
 /// Re-export commonly used items for convenience
 pub mod prelude {
     // Re-export specific types to avoid naming conflicts
-    pub use crate::kafka::{Error as KafkaError, HandlerResult, KafkaConfig, StreamHandler};
+    pub use crate::kafka::{HandlerResult, KafkaClientConfig, KafkaError, StreamHandler};
     pub use crate::logger::{init_with_default, LoggerConfig};
 }
 
@@ -56,14 +56,5 @@ mod tests {
         // Test logger types from prelude
         let config = LoggerConfig::default();
         assert!(config.enable_console());
-
-        // Test kafka types from prelude
-        let kafka_config = KafkaConfig {
-            client_id: None,
-            cluster_id: "test".to_string(),
-            bootstrap_servers: "localhost:9092".to_string(),
-            topics: vec!["test".to_string()],
-        };
-        assert_eq!(kafka_config.cluster_id, "test");
     }
 }

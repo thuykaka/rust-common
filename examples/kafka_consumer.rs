@@ -66,6 +66,10 @@ async fn main() -> anyhow::Result<()> {
         .set("auto.offset.reset", "earliest")
         .set("session.timeout.ms", "10000")
         .set("heartbeat.interval.ms", "500")
+        .set("metadata.max.age.ms", "900000")
+        .set("topic.metadata.refresh.interval.ms", "300000")
+        .set("topic.metadata.refresh.fast.interval.ms", "100")
+        .set("topic.metadata.propagation.max.ms", "30000")
         .set_log_level(RDKafkaLogLevel::Debug);
 
     let consumer: LoggingConsumer = config

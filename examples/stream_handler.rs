@@ -1,35 +1,40 @@
 use anyhow::Context;
-use rust_common::kafka::{
-    config::KafkaConfig,
-    stream_handler::{HandlerResult, StreamHandler},
-};
+use rust_common::kafka::core::KafkaClientConfig;
 use rust_common::logger;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logger::init_with_default().context("Failed to initialize logger")?;
 
-    let kafka_config = KafkaConfig {
-        client_id: None,
-        cluster_id: "aaa".to_string(),
-        bootstrap_servers: "localhost:9092".to_string(),
-        topics: vec!["aaa".to_string()],
-    };
+    let cluster_id = "xxx-yyy".to_string();
+    let bootstrap_servers = "localhost:9092".to_string();
+    let topics = vec![cluster_id.clone()];
 
-    let mut stream_handler = StreamHandler::new(kafka_config)?;
+    let config = KafkaClientConfig::new(cluster_id, bootstrap_servers).with_topics(topics);
 
-    stream_handler.register("/api/v1/login", |msg| async move {
+    tracing::info!("init stream handler with config: {:?}", config);
 
-        // Use async sleep instead of blocking sleep
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    let route_registry = rust_common::kafka::RouteRegistry::new()
+        .register("/api/v1/login", |msg| async move {
+            tracing::info!("login {:?}", msg);
+            Ok(rust_common::kafka::HandlerResult::Response(
+                serde_json::json!({
+                    "token": "123",
+                }),
+            ))
+        })?
+        .register("/api/v1/register", |msg| async move {
+            tracing::info!("register {:?}", msg);
+            Ok(rust_common::kafka::HandlerResult::Response(
+                serde_json::json!({
+                    "token": "456",
+                }),
+            ))
+        })?;
 
-        Ok(HandlerResult::Response(serde_json::json!({
-            "token": "123",
-            "sent": msg.data.clone()
-        })))
-    })?;
-
-    stream_handler.start_processing().await?;
+    let _ = rust_common::kafka::StreamHandler::new(config, route_registry)?
+        .start()
+        .await?;
 
     Ok(())
 }
