@@ -26,6 +26,8 @@ impl ConsumerContext for CustomContext {
 
 pub type LoggingConsumer = StreamConsumer<CustomContext>;
 
+/// KafkaConsumer is responsible for consuming messages from Kafka topics asynchronously.
+/// It uses a custom context for logging and supports concurrent message processing.
 pub struct KafkaConsumer {
     /// The underlying rdkafka consumer with custom context for logging
     pub consumer: Arc<LoggingConsumer>,
@@ -34,6 +36,16 @@ pub struct KafkaConsumer {
 }
 
 impl KafkaConsumer {
+    /// Creates a new KafkaConsumer with the given configuration and concurrency limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - KafkaClientConfig containing the necessary settings for the consumer.
+    /// * `concurrency_limit` - The maximum number of messages to process concurrently.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - Returns a KafkaConsumer instance or an error if creation fails.
     pub fn new(config: KafkaClientConfig, concurrency_limit: usize) -> Result<Self> {
         let context = CustomContext;
 
@@ -46,7 +58,8 @@ impl KafkaConsumer {
             .set("auto.offset.reset", "earliest")
             .set("session.timeout.ms", "10000")
             .set("heartbeat.interval.ms", "500")
-            .set("group.id", config.cluster_id.clone());
+            .set("group.id", config.cluster_id.clone())
+            .set("fetch.message.max.bytes", "1000000000");
 
         let consumer: LoggingConsumer = consumer_config
             .create_with_context(context)
@@ -71,6 +84,15 @@ impl KafkaConsumer {
         })
     }
 
+    /// Starts the consumer to process messages using the provided handler function.
+    ///
+    /// # Arguments
+    ///
+    /// * `handler` - A function that processes each message, returning a future.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<tokio::task::JoinHandle<()>>` - Returns a handle to the spawned task or an error if it fails.
     pub async fn start<T, F>(&self, handler: T) -> Result<tokio::task::JoinHandle<()>>
     where
         T: Fn(OwnedMessage) -> F + Send + Sync + Clone + 'static,
@@ -80,6 +102,7 @@ impl KafkaConsumer {
         let consumer = self.consumer.clone();
         let handler = Arc::new(handler);
         let handler_for_spawn = handler.clone();
+        let concurrency_limit = self.concurrency_limit;
 
         let consumer_task = tokio::spawn(async move {
             info!("consumer message processing...");
@@ -88,7 +111,7 @@ impl KafkaConsumer {
 
             consumer
                 .stream()
-                .for_each(|res| async {
+                .for_each_concurrent(concurrency_limit, |res| async {
                     match res {
                         Err(e) => {
                             error!("error while processing message: {}", e);

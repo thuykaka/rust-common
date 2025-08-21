@@ -19,17 +19,36 @@ use crate::kafka::{
     ParsedMessage, ResponseDestination,
 };
 
+/// RequestAsyncParams holds the parameters for sending asynchronous requests via Kafka.
 #[derive(Debug, Clone)]
 pub struct RequestAsyncParams {
+    /// The topic to which the request will be sent
     pub topic: String,
+    /// The URI associated with the request
     pub uri: String,
+    /// Optional transaction ID for tracking
     pub transaction_id: Option<String>,
+    /// Unique message ID for the request
     pub message_id: String,
+    /// The data payload of the request
     pub data: serde_json::Value,
+    /// Optional timeout in seconds for the request
     pub timeout_secs: Option<i64>,
 }
 
 impl RequestAsyncParams {
+    /// Creates a new instance of RequestAsyncParams with the specified topic, URI, and data.
+    ///
+    /// # Arguments
+    ///
+    /// * `topic` - The topic to which the request will be sent.
+    /// * `uri` - The URI associated with the request.
+    /// * `message_id` - An optional unique message ID for the request.
+    /// * `data` - The data payload of the request.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - A new instance of RequestAsyncParams.
     pub fn new(
         topic: String,
         uri: String,
@@ -46,16 +65,43 @@ impl RequestAsyncParams {
         }
     }
 
+    /// Sets the transaction ID for the request.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction_id` - The transaction ID to set.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated RequestAsyncParams instance.
     pub fn with_transaction_id(mut self, transaction_id: String) -> Self {
         self.transaction_id = Some(transaction_id);
         self
     }
 
+    /// Sets the message ID for the request.
+    ///
+    /// # Arguments
+    ///
+    /// * `message_id` - The message ID to set.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated RequestAsyncParams instance.
     pub fn with_message_id(mut self, message_id: String) -> Self {
         self.message_id = message_id;
         self
     }
 
+    /// Sets the timeout in seconds for the request.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout_secs` - The timeout in seconds to set.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated RequestAsyncParams instance.
     pub fn with_timeout_secs(mut self, timeout_secs: i64) -> Self {
         self.timeout_secs = Some(timeout_secs);
         self
@@ -81,6 +127,8 @@ impl PendingRequest {
     }
 }
 
+/// RequestSender manages the sending of asynchronous requests and handling responses via Kafka.
+/// It maintains a registry of pending requests and handles message routing and response.
 pub struct RequestSender {
     config: KafkaClientConfig,
     consumer: KafkaConsumer,
@@ -94,6 +142,15 @@ impl RequestSender {
     const DEFAULT_CONCURRENCY_LIMIT: usize = 100;
     const DEFAULT_TIMEOUT_SECS: i64 = 600;
 
+    /// Creates a new RequestSender with the given configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - KafkaClientConfig containing the necessary settings.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - Returns a RequestSender instance or an error if creation fails.
     pub fn new(config: KafkaClientConfig) -> Result<Self> {
         Self::with_concurrency_limit(
             config,
@@ -102,6 +159,17 @@ impl RequestSender {
         )
     }
 
+    /// Creates a new RequestSender with a specified concurrency limit and timeout.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - KafkaClientConfig containing the necessary settings.
+    /// * `concurrency_limit` - The maximum number of messages to process concurrently.
+    /// * `timeout_secs` - The default timeout in seconds for requests.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - Returns a RequestSender instance or an error if creation fails.
     pub fn with_concurrency_limit(
         config: KafkaClientConfig,
         concurrency_limit: usize,
@@ -130,10 +198,20 @@ impl RequestSender {
         })
     }
 
+    /// Retrieves the KafkaClientConfig associated with the RequestSender.
+    ///
+    /// # Returns
+    ///
+    /// * `&KafkaClientConfig` - A reference to the configuration.
     pub fn get_config(&self) -> &KafkaClientConfig {
         &self.config
     }
 
+    /// Starts the RequestSender to process incoming messages and handle responses.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<tokio::task::JoinHandle<()>>` - Returns a handle to the spawned task or an error if it fails.
     pub async fn start(&self) -> Result<tokio::task::JoinHandle<()>> {
         let timeout_secs = self.timeout_secs;
         let pending_requests = Arc::clone(&self.pending_requests);
@@ -150,6 +228,17 @@ impl RequestSender {
         Ok(consumer_task)
     }
 
+    /// Handles an incoming Kafka message by resolving the corresponding pending request.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The Kafka message to handle.
+    /// * `pending_requests` - The registry of pending requests.
+    /// * `timeout_secs` - The timeout in seconds for requests.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<()>` - Returns Ok if the message is handled successfully, or an error if it fails.
     async fn handle_message(
         message: OwnedMessage,
         pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
@@ -201,6 +290,19 @@ impl RequestSender {
         Ok(())
     }
 
+    /// Sends a base request message to the specified topic and URI.
+    ///
+    /// # Arguments
+    ///
+    /// * `topic` - The topic to which the request will be sent.
+    /// * `uri` - The URI associated with the request.
+    /// * `transaction_id` - The transaction identifier for tracking.
+    /// * `message_id` - The unique message identifier.
+    /// * `data` - The data payload of the request.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), KafkaError>` - Returns Ok if the request is sent successfully, or a KafkaError if it fails.
     async fn send_request_base(
         &self,
         topic: String,
@@ -210,7 +312,7 @@ impl RequestSender {
         data: serde_json::Value,
     ) -> Result<(), KafkaError> {
         let send_message = create_message(
-            Some(self.config.cluster_id.clone()),
+            self.config.cluster_id.clone(),
             message_id,
             transaction_id,
             topic,
@@ -230,6 +332,15 @@ impl RequestSender {
         Ok(())
     }
 
+    /// Sends an asynchronous request and waits for a response.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The parameters for the request.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ParsedMessage, KafkaError>` - Returns the parsed response message or a KafkaError if it fails.
     pub async fn send_request_async(
         &self,
         params: RequestAsyncParams,
@@ -271,6 +382,15 @@ impl RequestSender {
         }
     }
 
+    /// Sends a request and waits for an acknowledgment.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The parameters for the request.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), KafkaError>` - Returns Ok if the request is acknowledged, or a KafkaError if it fails.
     pub async fn send_request_acknowledge(&self, _: RequestAsyncParams) -> Result<(), KafkaError> {
         todo!("send request acknowledge")
     }

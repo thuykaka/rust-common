@@ -12,28 +12,41 @@ pub mod error_codes {
     pub const SECOND_FACTOR_REQUIRED: &str = "SECOND_FACTOR_REQUIRED";
 }
 
+/// KafkaError defines the various errors that can occur within the Kafka module.
+/// It provides structured error messages for different failure scenarios.
 #[derive(thiserror::Error, Debug)]
 pub enum KafkaError {
+    /// Represents an internal server error with a detailed message.
     #[error("Internal Server Error: {0}")]
     InternalServerError(String),
 
+    /// Indicates that a requested URI was not found.
     #[error("Uri not found: {0}")]
     UriNotFound(String),
 
+    /// Represents an error during message serialization.
     #[error("Serialization Error: {0}")]
     SerializationError(String),
 
+    /// Represents a connection error with a detailed message.
     #[error("Connection Error: {0}")]
     ConnectionError(String),
 
+    /// Indicates a timeout error with a detailed message.
     #[error("Timeout Error: {0}")]
     TimeoutError(String),
 
+    /// Represents a configuration error with a detailed message.
     #[error("Configuration Error: {0}")]
     ConfigurationError(String),
 }
 
 impl KafkaError {
+    /// Converts the KafkaError into a structured Response.
+    ///
+    /// # Returns
+    ///
+    /// * `Response` - A structured response containing the error code and message.
     pub fn to_response(&self) -> Response {
         match self {
             KafkaError::InternalServerError(_) => Response {
@@ -87,6 +100,11 @@ impl KafkaError {
         }
     }
 
+    /// Converts the KafkaError into a JSON value for response serialization.
+    ///
+    /// # Returns
+    ///
+    /// * `serde_json::Value` - A JSON representation of the error response.
     pub fn to_response_value(&self) -> serde_json::Value {
         serde_json::to_value(self.to_response()).unwrap_or_else(|_| {
             serde_json::json!({
