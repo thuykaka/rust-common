@@ -129,6 +129,22 @@ impl ParsedMessage {
     pub fn get_response_destination(&self) -> Option<&ResponseDestination> {
         self.response_destination.as_ref()
     }
+
+    pub fn get_data_as<U>(&self) -> Result<U>
+    where
+        U: serde::de::DeserializeOwned + std::fmt::Debug,
+    {
+        let inner = self.data.pointer("/data").ok_or_else(|| {
+            anyhow::anyhow!(
+                "missing nested data at /data path. Structure: {}",
+                serde_json::to_string_pretty(&self.data).unwrap_or_else(|_| "invalid".to_string())
+            )
+        })?;
+
+        let result = serde_json::from_value(inner.clone())?;
+        tracing::info!("extracted data: {:?}", &result);
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,9 +186,9 @@ pub trait MessageLatency {
         }
     }
 
-    fn is_expired(&self, expire_time: i64) -> bool {
+    fn is_expired(&self, timeout_secs: i64) -> bool {
         let latency = self.get_latency();
-        latency > 0 && latency > expire_time
+        latency > 0 && latency > timeout_secs * 1000
     }
 }
 

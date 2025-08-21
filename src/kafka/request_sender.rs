@@ -92,7 +92,7 @@ pub struct RequestSender {
 
 impl RequestSender {
     const DEFAULT_CONCURRENCY_LIMIT: usize = 100;
-    const DEFAULT_TIMEOUT_SECS: i64 = 60;
+    const DEFAULT_TIMEOUT_SECS: i64 = 600;
 
     pub fn new(config: KafkaClientConfig) -> Result<Self> {
         Self::with_concurrency_limit(
@@ -134,17 +134,20 @@ impl RequestSender {
         &self.config
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> Result<tokio::task::JoinHandle<()>> {
         let timeout_secs = self.timeout_secs;
         let pending_requests = Arc::clone(&self.pending_requests);
 
-        self.consumer
+        let consumer_task = self
+            .consumer
             .start(move |message| {
                 let pending_requests = Arc::clone(&pending_requests);
 
                 async move { Self::handle_message(message, pending_requests, timeout_secs).await }
             })
-            .await
+            .await?;
+
+        Ok(consumer_task)
     }
 
     async fn handle_message(

@@ -7,6 +7,7 @@ use crate::kafka::{
 };
 use anyhow::{anyhow, Context, Result};
 use rdkafka::{message::OwnedMessage, Message};
+use tokio::signal;
 use tracing::{error, info, warn};
 
 use crate::kafka::extensions::MessageLatency;
@@ -48,17 +49,20 @@ impl StreamHandler {
         &self.config
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> Result<tokio::task::JoinHandle<()>> {
         let route_registry = self.route_registry.clone();
         let producer = self.producer.clone();
 
-        self.consumer
+        let consumer_task = self
+            .consumer
             .start(move |message| {
                 let route_registry = route_registry.clone();
                 let producer = producer.clone();
                 async move { Self::handle_message(message, route_registry, producer).await }
             })
-            .await
+            .await?;
+
+        Ok(consumer_task)
     }
 
     async fn send_response(

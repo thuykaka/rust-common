@@ -26,60 +26,9 @@ impl ConsumerContext for CustomContext {
 
 pub type LoggingConsumer = StreamConsumer<CustomContext>;
 
-/// Kafka consumer for processing messages from topics
-///
-/// This struct provides a high-level interface for consuming messages from Kafka topics
-/// with built-in concurrency support, error handling, and logging.
-///
-/// # Features
-///
-/// - Async message processing with configurable concurrency
-/// - Automatic rebalancing with logging
-/// - Built-in error handling and recovery
-/// - Support for multiple topics
-/// - Graceful shutdown handling
-///
-/// # Example
-///
-/// ```rust
-/// use rust_common::kafka::core::*;
-/// use rdkafka::config::RDKafkaLogLevel;
-///
-/// // Create configuration
-/// let config = KafkaClientConfig::new(
-///     "my-consumer-group".to_string(),
-///     Some(vec!["my-topic".to_string()]),
-///     RDKafkaLogLevel::Info,
-/// );
-///
-/// // Create consumer with concurrency limit
-/// let consumer = KafkaConsumer::new(config, Some(10))?;
-///
-/// // Start processing messages
-/// consumer.start(|msg| async move {
-///     let payload = String::from_utf8_lossy(msg.payload().unwrap_or_default());
-///     println!("Processing message: {}", payload);
-///     
-///     // Your business logic here
-///     process_message(payload).await?;
-///     
-///     Ok(())
-/// }).await?;
-/// ```
-///
-/// # Concurrency
-///
-/// The consumer processes messages concurrently up to the specified `concurrency_limit`.
-/// Each message is processed in its own async task, allowing for efficient parallel processing.
-///
-/// # Error Handling
-///
-/// - Individual message processing errors are logged but don't stop the consumer
-/// - Network errors and rebalancing events are handled automatically
-/// - The consumer will attempt to reconnect on connection failures
 pub struct KafkaConsumer {
     /// The underlying rdkafka consumer with custom context for logging
-    pub consumer: LoggingConsumer,
+    pub consumer: Arc<LoggingConsumer>,
     /// Maximum number of messages to process concurrently
     pub concurrency_limit: usize,
 }
@@ -117,38 +66,47 @@ impl KafkaConsumer {
         info!("consumer subscribed to topic: {:?}", topics);
 
         Ok(Self {
-            consumer,
+            consumer: Arc::new(consumer),
             concurrency_limit,
         })
     }
 
-    pub async fn start<T, F>(&self, handler: T) -> Result<()>
+    pub async fn start<T, F>(&self, handler: T) -> Result<tokio::task::JoinHandle<()>>
     where
         T: Fn(OwnedMessage) -> F + Send + Sync + Clone + 'static,
         F: Future<Output = Result<()>> + Send + 'static,
     {
-        info!("consumer message processing...");
-
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        let consumer = self.consumer.clone();
         let handler = Arc::new(handler);
+        let handler_for_spawn = handler.clone();
 
-        self.consumer
-            .stream()
-            .filter_map(|msg| async { msg.ok() })
-            .map({
-                let handler = handler.clone();
-                move |m| {
-                    let handler = handler.clone();
-                    async move { handler(m.detach()).await }
-                }
-            })
-            .buffer_unordered(self.concurrency_limit)
-            .for_each(|res| async {
-                if let Err(e) = res {
-                    error!("error while processing message: {}", e);
-                }
-            })
-            .await;
+        let consumer_task = tokio::spawn(async move {
+            info!("consumer message processing...");
 
-        Ok(())
+            let _ = tx.send(()); // Signal that consumer is ready to process messages
+
+            consumer
+                .stream()
+                .for_each(|res| async {
+                    match res {
+                        Err(e) => {
+                            error!("error while processing message: {}", e);
+                        }
+                        Ok(m) => {
+                            let owned_message = m.detach();
+                            let handler = handler_for_spawn.clone();
+                            let _ = handler(owned_message).await;
+                        }
+                    }
+                })
+                .await;
+        });
+
+        // Wait for consumer to be ready
+        rx.await?;
+        info!("consumer is ready to process messages");
+
+        Ok(consumer_task)
     }
 }

@@ -5,56 +5,6 @@ use tracing::{error, info};
 
 use crate::kafka::core::{KafkaClientConfig, KafkaError};
 
-/// Kafka producer for sending messages to topics
-///
-/// This struct provides a high-level interface for sending messages to Kafka topics
-/// with built-in serialization, error handling, and logging.
-///
-/// # Features
-///
-/// - Async message sending with timeout support
-/// - Automatic JSON serialization
-/// - Comprehensive error handling
-/// - Built-in logging for success/failure events
-/// - Thread-safe with Arc-based sharing
-///
-/// # Example
-///
-/// ```rust
-/// use rust_common::kafka::core::*;
-/// use rdkafka::config::RDKafkaLogLevel;
-/// use serde::Serialize;
-///
-/// #[derive(Serialize, Debug)]
-/// struct UserEvent {
-///     user_id: u64,
-///     action: String,
-///     timestamp: u64,
-/// }
-///
-/// // Create producer
-/// let config = KafkaClientConfig::new(
-///     "my-cluster".to_string(),
-///     None,
-///     RDKafkaLogLevel::Info,
-/// );
-/// let producer = KafkaProducer::new(config)?;
-///
-/// // Send message
-/// let event = UserEvent {
-///     user_id: 123,
-///     action: "login".to_string(),
-///     timestamp: 1234567890,
-/// };
-///
-/// producer.send(event, "user-events").await?;
-/// ```
-///
-/// # Thread Safety
-///
-/// `KafkaProducer` is thread-safe and can be shared across multiple threads
-/// using `Arc<KafkaProducer>`.
-
 #[derive(Clone)]
 pub struct KafkaProducer {
     /// The underlying rdkafka producer wrapped in Arc for thread safety

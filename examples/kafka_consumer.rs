@@ -9,6 +9,7 @@ use rdkafka::{
     ClientConfig, ClientContext, Message, Timestamp,
 };
 use rust_common::logger::{self};
+use tokio::signal;
 use tracing::{info, warn};
 
 // A context can be used to change the behavior of producers and consumers by adding callbacks
@@ -46,12 +47,8 @@ fn expensive_computation(msg: OwnedMessage) -> String {
     message
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    logger::init_with_default().context("Failed to initialize logger")?;
-
-    info!("Starting Kafka consumer demo");
-
+// Start the Kafka consumer and return a handle to control it
+async fn start_consumer() -> anyhow::Result<tokio::task::JoinHandle<()>> {
     let context = CustomContext;
 
     let mut config = ClientConfig::new();
@@ -80,58 +77,107 @@ async fn main() -> anyhow::Result<()> {
         .subscribe(&["topic_name"])
         .context("Can't subscribe to specified topics")?;
 
-    // Use a more robust error handling approach
-    let stream_processor = consumer.stream().for_each(|result| async {
-        match result {
-            Err(e) => {
-                warn!("Error receiving message: {}", e);
-            }
-            Ok(m) => {
-                let payload = match m.payload_view::<str>() {
-                    Some(Ok(payload)) => payload,
-                    Some(Err(_)) => "<invalid payload>",
-                    None => "<no payload>",
-                };
-
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as i64;
-
-                let latency = match m.timestamp() {
-                    Timestamp::CreateTime(ts) => now - ts,    // tính từ producer
-                    Timestamp::LogAppendTime(ts) => now - ts, // tính từ broker
-                    Timestamp::NotAvailable => 0,
-                };
-
-                info!(
-                    "📩 Received: '{}' from topic {} [{}] offset {}, latency: {}ms",
-                    payload,
-                    m.topic(),
-                    m.partition(),
-                    m.offset(),
-                    latency
-                );
-
-                // Optional: Process message asynchronously for expensive operations
-                let owned_message = m.detach();
-                tokio::spawn(async move {
-                    let computation_result =
-                        tokio::task::spawn_blocking(|| expensive_computation(owned_message))
-                            .await
-                            .unwrap_or_else(|_| "Failed to process message".to_string());
-
-                    info!("Processed: {}", computation_result);
-                });
-            }
-        }
+    let consumer_task = tokio::spawn(async move {
+        info!("Consumer task starting...");
+        consumer
+            .stream()
+            .for_each(|result| async {
+                match result {
+                    Err(e) => {
+                        warn!("Error receiving message: {}", e);
+                    }
+                    Ok(m) => {
+                        let owned_message = m.detach();
+                        let computation_result = expensive_computation(owned_message);
+                        info!("Processed: {}", computation_result);
+                    }
+                }
+            })
+            .await;
     });
 
+    Ok(consumer_task)
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    logger::init_with_default().context("Failed to initialize logger")?;
+
+    info!("Starting Kafka consumer demo");
+
+    // Start the consumer and wait for it to be ready
+    let consumer_task = start_consumer().await?;
+
+    // Example: Calling an async function after consumer is ready
+    async fn some_async_function() {
+        info!("Starting some async function...");
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        info!("Async function completed!");
+    }
+
+    // This will run AFTER the consumer task is ready
+    some_async_function().await;
+    info!("After async function call");
+
+    // Keep the main thread alive while consumer runs in background
+    // You can add your main application logic here
+    signal::ctrl_c().await?;
+
+    info!("Shutting down...");
+    consumer_task.abort();
+
+    // Use a more robust error handling approach
+    // let stream_processor = consumer.stream().for_each(|result| async {
+    //     match result {
+    //         Err(e) => {
+    //             warn!("Error receiving message: {}", e);
+    //         }
+    //         Ok(m) => {
+    //             let payload = match m.payload_view::<str>() {
+    //                 Some(Ok(payload)) => payload,
+    //                 Some(Err(_)) => "<invalid payload>",
+    //                 None => "<no payload>",
+    //             };
+
+    //             let now = SystemTime::now()
+    //                 .duration_since(UNIX_EPOCH)
+    //                 .unwrap_or_default()
+    //                 .as_millis() as i64;
+
+    //             let latency = match m.timestamp() {
+    //                 Timestamp::CreateTime(ts) => now - ts,    // tính từ producer
+    //                 Timestamp::LogAppendTime(ts) => now - ts, // tính từ broker
+    //                 Timestamp::NotAvailable => 0,
+    //             };
+
+    //             info!(
+    //                 "📩 Received: '{}' from topic {} [{}] offset {}, latency: {}ms",
+    //                 payload,
+    //                 m.topic(),
+    //                 m.partition(),
+    //                 m.offset(),
+    //                 latency
+    //             );
+
+    //             // Optional: Process message asynchronously for expensive operations
+    //             let owned_message = m.detach();
+    //             tokio::spawn(async move {
+    //                 let computation_result =
+    //                     tokio::task::spawn_blocking(|| expensive_computation(owned_message))
+    //                         .await
+    //                         .unwrap_or_else(|_| "Failed to process message".to_string());
+
+    //                 info!("Processed: {}", computation_result);
+    //             });
+    //         }
+    //     }
+    // });
+
     // Run the stream processor
-    stream_processor.await;
+    // stream_processor.await;
 
     // Graceful shutdown - StreamConsumer will be dropped automatically
-    info!("Shutting down Kafka consumer");
+    // info!("Shutting down Kafka consumer");
 
     Ok(())
 }

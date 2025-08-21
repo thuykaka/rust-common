@@ -1,9 +1,50 @@
 use std::{collections::HashMap, sync::Arc};
 
 use std::sync::Mutex;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::kafka::{HandlerResult, KafkaError, MessageHandler, ParsedMessage};
+
+/// A macro for creating routes in a more concise DSL-style syntax.
+///
+/// # Example
+///
+/// ```rust
+/// use rust_common::kafka::{routes, HandlerResult};
+/// use serde_json::json;
+///
+/// let routes = routes![
+///     "/api/v1/login" => |msg| async move {
+///         Ok(HandlerResult::Response(json!({ "token": "123" })))
+///     },
+///     "/api/v1/register" => |msg| async move {
+///         Ok(HandlerResult::Response(json!({ "token": "456" })))
+///     }
+/// ];
+/// ```
+#[macro_export]
+macro_rules! routes {
+    // Handle empty routes
+    () => {
+        $crate::kafka::RouteRegistry::new()
+    };
+
+    // Handle single route
+    ($path:expr => $handler:expr) => {{
+    let mut registry = $crate::kafka::RouteRegistry::new();
+        registry.register($path, $handler);
+        registry
+    }};
+    // Handle multiple routes
+    ($path:expr => $handler:expr, $($rest_path:expr => $rest_handler:expr),+ $(,)?) => {{
+        let mut registry = $crate::kafka::RouteRegistry::new();
+        registry.register($path, $handler);
+        $(
+            registry.register($rest_path, $rest_handler);
+        )+
+        registry
+    }};
+}
 
 #[derive(Clone)]
 pub struct RouteRegistry {
@@ -29,7 +70,7 @@ impl RouteRegistry {
     ///
     /// Returns `Ok(Self)` if registration was successful, or `Err` if it failed.
     /// This allows for method chaining.
-    pub fn register<F, Fut>(&self, uri: &str, f: F) -> Result<Self, KafkaError>
+    pub fn register<F, Fut>(&mut self, uri: &str, f: F) -> &mut Self
     where
         F: Fn(ParsedMessage) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<HandlerResult, KafkaError>> + Send + 'static,
@@ -42,17 +83,14 @@ impl RouteRegistry {
                 >
         });
 
-        let mut routes = self
-            .routes
-            .lock()
-            .map_err(|_| KafkaError::InternalServerError("Failed to acquire lock".to_string()))?;
+        if let Ok(mut routes) = self.routes.lock() {
+            routes.insert(uri.to_string(), handler);
+            info!("registered handler for uri: {}", uri);
+        } else {
+            error!("Failed to acquire lock for routes");
+        }
 
-        routes.insert(uri.to_string(), handler);
-        info!("registered handler for uri: {}", uri);
-
-        Ok(Self {
-            routes: Arc::clone(&self.routes),
-        })
+        self
     }
 
     /// Checks if a handler is registered for the given URI
@@ -109,5 +147,98 @@ impl RouteRegistry {
 impl Default for RouteRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::kafka::HandlerResult;
+
+    #[tokio::test]
+    async fn test_routes_macro_empty() {
+        let registry = routes![];
+        assert_eq!(registry.get_registered_uris().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_routes_macro_single_route() {
+        let registry = routes![
+            "/api/test" => |_msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({"status": "ok"})))
+            }
+        ];
+
+        assert_eq!(registry.get_registered_uris().unwrap().len(), 1);
+        assert!(registry.has_handler("/api/test").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_routes_macro_multiple_routes() {
+        let registry = routes![
+            "/api/v1/login" => |_msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({"token": "123"})))
+            },
+            "/api/v1/register" => |_msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({"token": "456"})))
+            },
+            "/api/v1/profile" => |_msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({"user": "john"})))
+            }
+        ];
+
+        let uris = registry.get_registered_uris().unwrap();
+        assert_eq!(uris.len(), 3);
+        assert!(registry.has_handler("/api/v1/login").unwrap());
+        assert!(registry.has_handler("/api/v1/register").unwrap());
+        assert!(registry.has_handler("/api/v1/profile").unwrap());
+        assert!(!registry.has_handler("/api/v1/unknown").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_routes_macro_with_trailing_comma() {
+        let registry = routes![
+            "/api/test1" => |_msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({"test": 1})))
+            },
+            "/api/test2" => |_msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({"test": 2})))
+            },
+        ];
+
+        assert_eq!(registry.get_registered_uris().unwrap().len(), 2);
+        assert!(registry.has_handler("/api/test1").unwrap());
+        assert!(registry.has_handler("/api/test2").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_routes_macro_handler_execution() {
+        let registry = routes![
+            "/api/echo" => |msg| async move {
+                Ok(HandlerResult::Response(serde_json::json!({
+                    "echo": msg.uri,
+                    "message": "received"
+                })))
+            }
+        ];
+
+        let handler = registry.get_handler("/api/echo").unwrap().unwrap();
+        let test_msg = crate::kafka::ParsedMessage {
+            message_type: crate::kafka::core::MessageType::Request,
+            source_id: Some("test-service".to_string()),
+            transaction_id: "tx-123".to_string(),
+            message_id: "msg-456".to_string(),
+            uri: "/api/echo".to_string(),
+            response_destination: None,
+            data: serde_json::Value::Null,
+        };
+
+        let result = handler(&test_msg).await.unwrap();
+        match result {
+            HandlerResult::Response(response) => {
+                assert_eq!(response["echo"], "/api/echo");
+                assert_eq!(response["message"], "received");
+            }
+            _ => panic!("Expected Response variant"),
+        }
     }
 }
