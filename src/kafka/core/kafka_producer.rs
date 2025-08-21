@@ -5,56 +5,8 @@ use tracing::{error, info};
 
 use crate::kafka::core::{KafkaClientConfig, KafkaError};
 
-/// Kafka producer for sending messages to topics
-///
-/// This struct provides a high-level interface for sending messages to Kafka topics
-/// with built-in serialization, error handling, and logging.
-///
-/// # Features
-///
-/// - Async message sending with timeout support
-/// - Automatic JSON serialization
-/// - Comprehensive error handling
-/// - Built-in logging for success/failure events
-/// - Thread-safe with Arc-based sharing
-///
-/// # Example
-///
-/// ```rust
-/// use rust_common::kafka::core::*;
-/// use rdkafka::config::RDKafkaLogLevel;
-/// use serde::Serialize;
-///
-/// #[derive(Serialize, Debug)]
-/// struct UserEvent {
-///     user_id: u64,
-///     action: String,
-///     timestamp: u64,
-/// }
-///
-/// // Create producer
-/// let config = KafkaClientConfig::new(
-///     "my-cluster".to_string(),
-///     None,
-///     RDKafkaLogLevel::Info,
-/// );
-/// let producer = KafkaProducer::new(config)?;
-///
-/// // Send message
-/// let event = UserEvent {
-///     user_id: 123,
-///     action: "login".to_string(),
-///     timestamp: 1234567890,
-/// };
-///
-/// producer.send(event, "user-events").await?;
-/// ```
-///
-/// # Thread Safety
-///
-/// `KafkaProducer` is thread-safe and can be shared across multiple threads
-/// using `Arc<KafkaProducer>`.
-
+/// KafkaProducer is responsible for sending messages to Kafka topics asynchronously.
+/// It wraps the rdkafka FutureProducer for thread-safe operations.
 #[derive(Clone)]
 pub struct KafkaProducer {
     /// The underlying rdkafka producer wrapped in Arc for thread safety
@@ -62,43 +14,21 @@ pub struct KafkaProducer {
 }
 
 impl KafkaProducer {
-    /// Creates a new Kafka producer with the given configuration
+    /// Creates a new KafkaProducer with the given configuration.
     ///
     /// # Arguments
     ///
-    /// * `config` - The Kafka client configuration containing connection settings
+    /// * `config` - KafkaClientConfig containing the necessary settings for the producer.
     ///
     /// # Returns
     ///
-    /// Returns a `Result<KafkaProducer>` where:
-    /// - `Ok(producer)` - Successfully created producer
-    /// - `Err(e)` - Error during producer creation (e.g., connection issues)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use rust_common::kafka::core::*;
-    /// use rdkafka::config::RDKafkaLogLevel;
-    ///
-    /// let config = KafkaClientConfig::new(
-    ///     "my-cluster".to_string(),
-    ///     None,
-    ///     RDKafkaLogLevel::Info,
-    /// );
-    ///
-    /// let producer = KafkaProducer::new(config)?;
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Invalid configuration (e.g., missing bootstrap servers)
-    /// - Network connectivity issues
-    /// - Kafka broker is unavailable
+    /// * `anyhow::Result<Self>` - Returns a KafkaProducer instance or an error if creation fails.
     pub fn new(config: KafkaClientConfig) -> anyhow::Result<Self> {
         let mut producer_config = config.to_client_config();
 
         producer_config.set("acks", "0");
+        producer_config.set("transaction.timeout.ms", "60000");
+        producer_config.set("message.send.max.retries", "10");
 
         let producer: FutureProducer = producer_config
             .create()
@@ -109,60 +39,16 @@ impl KafkaProducer {
         })
     }
 
-    /// Sends a message to the specified Kafka topic
-    ///
-    /// This method serializes the message to JSON and sends it to the specified topic.
-    /// The operation is async and includes built-in error handling and logging.
+    /// Sends a message to the specified Kafka topic.
     ///
     /// # Arguments
     ///
-    /// * `message` - The message to send. Must implement `Serialize` and `Debug` traits
-    /// * `topic` - The target Kafka topic name
-    ///
-    /// # Type Parameters
-    ///
-    /// * `T` - The message type. Must implement `serde::Serialize` and `std::fmt::Debug`
+    /// * `message` - The message to be sent, which must implement `serde::Serialize` and `std::fmt::Debug`.
+    /// * `topic` - The topic to which the message will be sent.
     ///
     /// # Returns
     ///
-    /// Returns a `Result<()>` where:
-    /// - `Ok(())` - Message sent successfully
-    /// - `Err(e)` - Error during sending (serialization, network, etc.)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use serde::Serialize;
-    ///
-    /// #[derive(Serialize, Debug)]
-    /// struct OrderEvent {
-    ///     order_id: String,
-    ///     amount: f64,
-    ///     user_id: u64,
-    /// }
-    ///
-    /// let event = OrderEvent {
-    ///     order_id: "12345".to_string(),
-    ///     amount: 99.99,
-    ///     user_id: 456,
-    /// };
-    ///
-    /// producer.send(event, "orders").await?;
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Message serialization fails
-    /// - Network connectivity issues
-    /// - Kafka broker is unavailable
-    /// - Topic doesn't exist (if auto.create.topics is disabled)
-    ///
-    /// # Logging
-    ///
-    /// This method logs:
-    /// - Success: `info!("sent message: {:?} to topic: {} success", message, topic)`
-    /// - Failure: `error!("sent message: {:?} to topic: {} failed: {}", message, topic, e)`
+    /// * `anyhow::Result<(), KafkaError>` - Returns Ok if the message is sent successfully, or a KafkaError if it fails.
     pub async fn send<T>(&self, message: T, topic: &str) -> anyhow::Result<(), KafkaError>
     where
         T: serde::Serialize + std::fmt::Debug,

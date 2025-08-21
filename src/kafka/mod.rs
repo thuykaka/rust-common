@@ -7,3 +7,6 @@ pub mod utils;
 pub use core::*;
 pub use routes_register::*;
 pub use stream_handler::*;
+
+// Re-export the routes macro for easier access
+pub use crate::routes;

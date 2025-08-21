@@ -1,35 +1,75 @@
 use std::{collections::HashMap, sync::Arc};
 
 use std::sync::Mutex;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::kafka::{HandlerResult, KafkaError, MessageHandler, ParsedMessage};
 
+/// The `routes` macro provides a convenient way to create a `RouteRegistry` with registered routes.
+///
+/// # Examples
+///
+/// ```rust
+/// use rust_common::kafka::routes;
+///
+/// let registry = routes!(
+///     "/api/users" => user_handler,
+///     "/api/orders" => order_handler
+/// );
+/// ```
+#[macro_export]
+macro_rules! routes {
+    // Handle empty routes
+    () => {
+        $crate::kafka::RouteRegistry::new()
+    };
+
+    // Handle single route
+    ($path:expr => $handler:expr) => {{
+        let mut registry = $crate::kafka::RouteRegistry::new();
+        registry.register($path, $handler);
+        registry
+    }};
+    // Handle multiple routes
+    ($path:expr => $handler:expr, $($rest_path:expr => $rest_handler:expr),+ $(,)?) => {{
+        let mut registry = $crate::kafka::RouteRegistry::new();
+        registry.register($path, $handler);
+        $(
+            registry.register($rest_path, $rest_handler);
+        )+
+        registry
+    }};
+}
+
+/// `RouteRegistry` manages the registration and retrieval of message handlers for specific URIs.
 #[derive(Clone)]
 pub struct RouteRegistry {
     routes: Arc<Mutex<HashMap<String, MessageHandler>>>,
 }
 
 impl RouteRegistry {
-    /// Creates a new empty route registry
+    /// Creates a new, empty `RouteRegistry`.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - A new instance of `RouteRegistry`.
     pub fn new() -> Self {
         Self {
             routes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// Registers a handler for a specific URI pattern
+    /// Registers a message handler for a specific URI.
     ///
     /// # Arguments
     ///
-    /// * `uri` - The URI pattern to register the handler for
-    /// * `handler` - The async function to handle messages
+    /// * `uri` - The URI for which the handler is registered.
+    /// * `f` - The handler function to register.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Self)` if registration was successful, or `Err` if it failed.
-    /// This allows for method chaining.
-    pub fn register<F, Fut>(&self, uri: &str, f: F) -> Result<Self, KafkaError>
+    /// * `&mut Self` - The updated `RouteRegistry` instance.
+    pub fn register<F, Fut>(&mut self, uri: &str, f: F) -> &mut Self
     where
         F: Fn(ParsedMessage) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<HandlerResult, KafkaError>> + Send + 'static,
@@ -42,29 +82,25 @@ impl RouteRegistry {
                 >
         });
 
-        let mut routes = self
-            .routes
-            .lock()
-            .map_err(|_| KafkaError::InternalServerError("Failed to acquire lock".to_string()))?;
+        if let Ok(mut routes) = self.routes.lock() {
+            routes.insert(uri.to_string(), handler);
+            info!("registered handler for uri: {}", uri);
+        } else {
+            error!("Failed to acquire lock for routes");
+        }
 
-        routes.insert(uri.to_string(), handler);
-        info!("registered handler for uri: {}", uri);
-
-        Ok(Self {
-            routes: Arc::clone(&self.routes),
-        })
+        self
     }
 
-    /// Checks if a handler is registered for the given URI
+    /// Checks if a handler is registered for a specific URI.
     ///
     /// # Arguments
     ///
-    /// * `uri` - The URI to check for registered handlers
+    /// * `uri` - The URI to check.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(true)` if a handler is registered for the URI, `Ok(false)` if not,
-    /// or `Err` if the check cannot be performed.
+    /// * `Result<bool, KafkaError>` - Returns true if a handler is registered, false otherwise.
     pub fn has_handler(&self, uri: &str) -> Result<bool, KafkaError> {
         let routes = self
             .routes
@@ -73,12 +109,11 @@ impl RouteRegistry {
         Ok(routes.contains_key(uri))
     }
 
-    /// Returns a list of all registered URI patterns
+    /// Retrieves all registered URIs.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Vec<String>)` containing all registered URIs, or `Err` if the
-    /// operation cannot be completed.
+    /// * `Result<Vec<String>, KafkaError>` - A vector of registered URIs.
     pub fn get_registered_uris(&self) -> Result<Vec<String>, KafkaError> {
         let routes = self
             .routes
@@ -87,16 +122,15 @@ impl RouteRegistry {
         Ok(routes.keys().cloned().collect())
     }
 
-    /// Gets a handler for the specified URI
+    /// Retrieves the handler for a specific URI, if it exists.
     ///
     /// # Arguments
     ///
-    /// * `uri` - The URI to get the handler for
+    /// * `uri` - The URI for which to retrieve the handler.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(handler))` if a handler is found, `Ok(None)` if not,
-    /// or `Err` if the operation cannot be completed.
+    /// * `Result<Option<MessageHandler>, KafkaError>` - The handler if it exists, or None.
     pub fn get_handler(&self, uri: &str) -> Result<Option<MessageHandler>, KafkaError> {
         let routes = self
             .routes
@@ -107,6 +141,11 @@ impl RouteRegistry {
 }
 
 impl Default for RouteRegistry {
+    /// Creates a default instance of `RouteRegistry`.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - A new instance of `RouteRegistry`.
     fn default() -> Self {
         Self::new()
     }
